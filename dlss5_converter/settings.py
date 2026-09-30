@@ -332,7 +332,7 @@ VIDEO_PASSES = 1
 #: Ceiling of the Video tab's Passes control. Kept well under the Single
 #: image tab's 32: at up to 4K there, 8 passes cost 8x one, and a video pays
 #: that multiplier on every frame rather than once.
-VIDEO_PASSES_MAX = 5
+VIDEO_PASSES_MAX = 10
 
 
 @dataclass
