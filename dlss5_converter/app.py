@@ -3091,6 +3091,9 @@ class MainWindow(QMainWindow):
         self._seq_worker: SequenceWorker | None = None
         self._video_thread: QThread | None = None
         self._video_worker = None
+        #: Wall-clock start of the running conversion, for the "took Xm Ys"
+        #: shown on the completion popup.
+        self._video_start_time: float = 0.0
         self._video_dl_thread: QThread | None = None
         self._video_dl_worker = None
         self._video_after_download = None
@@ -5553,6 +5556,10 @@ class MainWindow(QMainWindow):
         # not from whatever the last conversion left behind.
         self._video_eta = _EtaTracker()
         self._video_eta.start()
+        # Wall-clock start for the total shown on the completion popup - the
+        # per-frame ETA above is smoothed and skips the harness start-up, which
+        # would make it read low against how long the run actually took.
+        self._video_start_time = time.monotonic()
 
         self._video_thread = QThread(self)
         self._video_worker = VideoWorker(
@@ -5606,16 +5613,19 @@ class MainWindow(QMainWindow):
         self.video_page.info_label.setText(f"Saved {output.name}")
         self.statusBar().showMessage(f"Video saved: {output}")
 
+        elapsed = time.monotonic() - self._video_start_time
+
         # A clear, explicit "done" - a video is a long operation and the user
         # is often not watching by the time it finishes. Offer the folder,
-        # since the next thing they want is the file.
+        # since the next thing they want is the file, and the total time it
+        # took since that's the question they'll otherwise have to guess at.
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
         box = QMessageBox(
             QMessageBox.Icon.Information,
             "Video conversion complete",
-            f"Saved to:\n{output}",
+            f"Saved to:\n{output}\n\nTook {_format_duration(elapsed)}.",
             parent=self,
         )
         box.addButton(QMessageBox.StandardButton.Ok)
