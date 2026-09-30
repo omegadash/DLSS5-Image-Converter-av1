@@ -319,12 +319,20 @@ class StereoSettings:
 
 
 #: What a video conversion always uses, so the Video tab has no controls for
-#: them: one pass (a user comparing 1 against 8 on video saw no difference,
-#: and it is up to 8x the time), DLSS at up to 4K, the bundled Small depth
-#: model (only the 3D export reads depth, and Small was what made the best
-#: 3D conversion so far), and no Detail (a supersampled still-image mode).
-VIDEO_PASSES = 1
+#: them: DLSS at up to 4K, the bundled Small depth model (only the 3D export
+#: reads depth, and Small was what made the best 3D conversion so far), and no
+#: Detail (a supersampled still-image mode).
 VIDEO_MAX_EDGE = 3840
+#: Default pass count for a video conversion, and the floor of the Passes
+#: control. One pass is the historical default - a user comparing 1 against 8
+#: on video saw no difference on a lot of footage - but unlike the Single
+#: image tab's ceiling of 32, a video re-pays the cost every frame, so the
+#: control is capped far lower (VIDEO_PASSES_MAX) rather than left open.
+VIDEO_PASSES = 1
+#: Ceiling of the Video tab's Passes control. Kept well under the Single
+#: image tab's 32: at up to 4K there, 8 passes cost 8x one, and a video pays
+#: that multiplier on every frame rather than once.
+VIDEO_PASSES_MAX = 10
 
 
 @dataclass
@@ -340,6 +348,13 @@ class VideoSettings:
     """
 
     neural: NeuralSettings = field(default_factory=NeuralSettings)
+    #: How many times DLSS evaluates each output frame (see evaluator.Harness
+    #: and pipeline.convert_video). More passes let the temporal accumulator
+    #: settle further before the frame is read back, at a roughly linear cost
+    #: in conversion time. Clamped to 1..VIDEO_PASSES_MAX on load, so a hand-
+    #: edited settings file cannot make a video pay the Single image tab's
+    #: much higher ceiling per frame.
+    passes: int = VIDEO_PASSES
 
 
 @dataclass
@@ -420,9 +435,18 @@ class AppSettings:
         # as before on day one and only diverge when they change something.
         video_raw = raw.get("video")
         if isinstance(video_raw, dict) and isinstance(video_raw.get("neural"), dict):
-            video = VideoSettings(neural=build(NeuralSettings, video_raw["neural"]))
+            video_neural = build(NeuralSettings, video_raw["neural"])
         else:
-            video = VideoSettings(neural=replace(neural))
+            video_neural = replace(neural)
+        try:
+            video_passes = int(video_raw.get("passes", VIDEO_PASSES)) if isinstance(video_raw, dict) else VIDEO_PASSES
+        except (TypeError, ValueError):
+            video_passes = VIDEO_PASSES
+        # Clamped rather than trusted: a hand-edited or older settings file
+        # must not be able to push a per-frame video pass count past the
+        # ceiling the Passes control itself enforces.
+        video_passes = max(1, min(VIDEO_PASSES_MAX, video_passes))
+        video = VideoSettings(neural=video_neural, passes=video_passes)
 
         return cls(
             neural=neural,
