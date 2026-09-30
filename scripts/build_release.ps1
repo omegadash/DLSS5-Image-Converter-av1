@@ -24,7 +24,7 @@ $AssetsSrc = Join-Path $ProjectRoot "dlss5_converter\assets"
 # place. Keeping them across rebuilds is what buys back that guarantee.
 # No "pytorch" folder any more - depth is ONNX Runtime and the model is bundled,
 # so nothing large is downloaded on first run.
-$UserFolders = @("dlss_files", "models", "output", "scenes")
+$UserFolders = @("dlss_files", "models", "output", "scenes", "luts", "pyav")
 
 # Files in release\ that belong to whoever runs it, not to the build. Wiping
 # settings.json on every rebuild reset their choices (the neural backend, the
@@ -167,11 +167,16 @@ if (-not (Test-Path -LiteralPath (Join-Path $Frozen "DLSS5Converter.exe"))) {
     throw "PyInstaller reported success but produced no DLSS5Converter.exe."
 }
 
-# A running copy holds its own DLLs open, and the replace step below would then
-# delete half the release before hitting the locked file and failing with an
-# "Access to the path is denied" from somewhere deep in _internal. Checking up
-# front turns that into one clear sentence, before anything is removed.
-$Running = Get-Process -Name "DLSS5Converter" -ErrorAction SilentlyContinue
+# A running copy from this release folder holds its DLLs open, and the replace
+# step below would then delete half the release before hitting a locked file.
+# Copies installed elsewhere do not block this build.
+$ReleaseExe = Join-Path $Release "DLSS5Converter.exe"
+$Running = Get-Process -Name "DLSS5Converter" -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.Path -and [string]::Equals(
+            $_.Path, $ReleaseExe, [System.StringComparison]::OrdinalIgnoreCase
+        )
+    }
 if ($Running) {
     throw ("DLSS5Converter.exe is running (PID $($Running.Id -join ', ')). " +
            "Close it before rebuilding - a running copy locks files in release\_internal.")

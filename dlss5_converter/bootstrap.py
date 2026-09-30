@@ -93,7 +93,7 @@ TORCH_WHEEL_URL = (
 #: hostile one.
 TORCH_APPROX_BYTES = 1_915_000_000
 
-#: PyAV carries a full FFmpeg (H.264/H.265, NVENC, AAC muxing) that OpenCV's
+#: PyAV carries a full FFmpeg (H.264/H.265/AV1, NVENC, AAC muxing) that OpenCV's
 #: prebuilt build does not. Downloaded on first use of the Video tab rather than
 #: shipped: its wheels bundle a GPL FFmpeg, so having the user's machine fetch
 #: it from PyPI keeps this project clear of redistributing that binary.

@@ -337,9 +337,10 @@ The same sidebar controls apply — neural strengths, style, colour — plus:
 
 - **Output codec.** **H.264/MP4** by default, hardware-encoded on your GPU
   (NVENC) — the one format every editor and player ingests. H.265/MP4 for
-  smaller files; ProRes 422 HQ or ProRes 4444 (10-bit .mov) as editing masters;
-  VP9/WebM for web upload, *not* editing (editors do not import WebM cleanly).
-  Every format encodes at visually lossless constant quality.
+  smaller files; AV1/MP4 for smaller files on modern players (NVENC, with a
+  software fallback); ProRes 422 HQ or ProRes 4444 (10-bit .mov) as editing
+  masters; VP9/WebM for web upload, *not* editing (editors do not import WebM
+  cleanly). Every format encodes at visually lossless constant quality.
 - **Effort.** *Quick* (1 pass) or *Quality* (4 passes). The neural pass is ~0.1 s
   a frame either way, so a 10-second clip converts in well under a minute.
 - **Range.** Convert the first few seconds to check the look before committing to
@@ -597,7 +598,8 @@ inside Visual Studio if it is not on PATH. The SDK clone is blobless and sparse
 `.\scripts\build_release.ps1` produces the portable folder. It **refuses to finish**
 if any `nvngx_*.dll`, `*.addon64` or `dxgi.dll` has ended up inside the application,
 so "bring your own files" is a property of the build rather than something to
-remember. `dlss_files`, `models`, `pytorch` and `output` survive a rebuild.
+remember. `dlss_files`, `models`, `pyav`, `luts`, `scenes` and `output` survive
+a rebuild, as do `settings.json` and `crash.log`.
 
 Tests: `.\.venv-cuda\Scripts\python.exe -m pytest`
 

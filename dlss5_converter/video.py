@@ -101,6 +101,8 @@ ENCODER_OPTIONS: dict[str, dict[str, str]] = {
     "libx264": {"crf": "16", "preset": "slow"},
     "hevc_nvenc": {"preset": "p7", "tune": "hq", "rc": "vbr", "cq": "18", "b": "0"},
     "libx265": {"crf": "18", "preset": "slow"},
+    "av1_nvenc": {"preset": "p7", "tune": "hq", "rc": "vbr", "cq": "20", "b": "0"},
+    "libsvtav1": {"crf": "22", "preset": "4"},
     "libvpx-vp9": {"crf": "20", "b": "0", "row-mt": "1"},
     # prores_ks profiles: 3 = 422 HQ, 4 = 4444. FFmpeg's own implementation,
     # not Apple's; Resolve, Premiere and Final Cut all ingest it.
@@ -110,13 +112,15 @@ ENCODER_OPTIONS: dict[str, dict[str, str]] = {
 
 
 #: Offered in the UI in this order. H.264 first, because it is the one format
-#: every editor and player ingests; ProRes are the editing masters; VP9 is last because WebM is a web-delivery
-#: format that Premiere, Resolve and Final Cut do not import cleanly.
+#: every editor and player ingests; AV1 is for modern players, ProRes for editing,
+#: and VP9 last because WebM is a web-delivery format editors do not import cleanly.
 CODECS: tuple[Codec, ...] = (
     Codec("h264", "H.264 / MP4", ".mp4", "h264_nvenc", "libx264", "yuv420p",
           "Universal - every editor and player. Hardware-encoded on your GPU."),
     Codec("h265", "H.265 / MP4", ".mp4", "hevc_nvenc", "libx265", "yuv420p",
           "Smaller files, modern editors. Also hardware-encoded."),
+    Codec("av1", "AV1 / MP4", ".mp4", "av1_nvenc", "libsvtav1", "yuv420p",
+          "Small files, modern players. Hardware-encoded on supported NVIDIA GPUs."),
     Codec("prores", "ProRes 422 HQ / MOV", ".mov", "prores_ks", "prores_ks", "yuv422p10le",
           "Editing master, 10-bit. Large files, encoded on the CPU."),
     Codec("prores4444", "ProRes 4444 / MOV", ".mov", "prores_ks:4444", "prores_ks:4444",
@@ -354,7 +358,26 @@ def mux_audio(
 
         with av.open(str(video_only)) as vid, av.open(str(destination), mode="w") as out:
             video_in = vid.streams.video[0]
-            video_out = out.add_stream_from_template(video_in)
+            video_codec = video_in.codec_context.codec
+            if video_codec.canonical_name == "av1":
+                # PyAV's decoder for AV1 is libdav1d, which is not an encoder.
+                # add_stream_from_template uses that implementation name in
+                # write mode and fails; describe the same AV1 stream through
+                # our software encoder, then copy its encoded packets unchanged.
+                video_out = out.add_stream(
+                    "libsvtav1", rate=video_in.average_rate or video_in.base_rate
+                )
+                source_context = video_in.codec_context
+                output_context = video_out.codec_context
+                output_context.width = source_context.width
+                output_context.height = source_context.height
+                output_context.pix_fmt = source_context.pix_fmt
+                if source_context.extradata:
+                    output_context.extradata = source_context.extradata
+                video_out.time_base = video_in.time_base
+                video_out.metadata.update(video_in.metadata)
+            else:
+                video_out = out.add_stream_from_template(video_in)
 
             # Every output stream must be added before the first mux writes the
             # container header - add one afterwards and the mux dies with

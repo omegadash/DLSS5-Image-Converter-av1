@@ -58,6 +58,15 @@ def test_h264_is_the_default_and_first_offered():
     assert video.CODECS_BY_KEY["h264"].suffix == ".mp4"
 
 
+def test_av1_uses_nvenc_with_a_software_fallback():
+    av1 = video.CODECS_BY_KEY["av1"]
+    assert av1.encoder == "av1_nvenc"
+    assert av1.fallback == "libsvtav1"
+    assert av1.suffix == ".mp4"
+    assert "av1_nvenc" in video.ENCODER_OPTIONS
+    assert "libsvtav1" in video.ENCODER_OPTIONS
+
+
 def test_webm_is_last_and_flagged_for_web_not_editing():
     vp9 = video.CODECS[-1]
     assert vp9.key == "vp9"
@@ -172,6 +181,30 @@ def test_a_silent_source_yields_a_silent_output(tmp_path):
     final = tmp_path / "final.mp4"
     assert video.mux_audio(src, video_only, final) is False
     assert final.exists()
+
+
+@pyav
+def test_av1_output_with_audio_does_not_treat_decoder_as_encoder(tmp_path):
+    """AV1's libdav1d decoder name cannot be reopened as a mux output encoder."""
+    from dataclasses import replace
+    import av
+
+    src = make_clip(tmp_path / "src.mp4", frames=6, size=(320, 180), audio=True)
+    video_only = tmp_path / "av1.mp4"
+    codec = replace(video.CODECS_BY_KEY["av1"], encoder="libsvtav1")
+    writer = video.VideoWriter(video_only, codec, 24, (320, 180))
+    for i in range(6):
+        writer.write(np.full((180, 320, 3), i * 30, np.uint8))
+    writer.close()
+
+    final = tmp_path / "final.mp4"
+    assert video.mux_audio(src, video_only, final) is True
+    with av.open(str(final)) as container:
+        assert container.streams.audio
+        stream = container.streams.video[0]
+        assert stream.codec_context.codec.canonical_name == "av1"
+        assert stream.frames == 6
+        assert next(container.decode(stream)).width == 320
 
 
 # -- UI wiring (the v0.1.15 guard) -------------------------------------------
