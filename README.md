@@ -341,8 +341,10 @@ The same sidebar controls apply — neural strengths, style, colour — plus:
   software fallback); ProRes 422 HQ or ProRes 4444 (10-bit .mov) as editing
   masters; VP9/WebM for web upload, *not* editing (editors do not import WebM
   cleanly). Every format encodes at visually lossless constant quality.
-- **Effort.** *Quick* (1 pass) or *Quality* (4 passes). The neural pass is ~0.1 s
-  a frame either way, so a 10-second clip converts in well under a minute.
+- **Passes.** 1 to 5 evaluations per frame (Export card). More passes let DLSS's
+  temporal accumulator settle further, at roughly that much more conversion
+  time — a video pays the cost on every frame, so this is capped well below
+  the Single image tab's own Passes control.
 - **Range.** Convert the first few seconds to check the look before committing to
   the whole thing.
 

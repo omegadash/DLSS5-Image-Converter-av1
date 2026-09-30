@@ -78,6 +78,7 @@ from .settings import (
     NR_TRANSFER_MAX,
     VIDEO_MAX_EDGE,
     VIDEO_PASSES,
+    VIDEO_PASSES_MAX,
     AppSettings,
     DepthSettings,
     DetailSettings,
@@ -2052,9 +2053,11 @@ class VideoPage(QWidget):
 
     Its own neural and HDR controls, independent of the Single image sidebar
     (see settings.VideoSettings): what this tab shows is exactly what a video
-    gets. Passes, size, depth model and Detail are fixed for video and not
-    shown. A small player lets the clip be scrubbed and watched before
-    committing to a conversion. The player uses QMediaPlayer (Windows Media Foundation / the
+    gets. Size, depth model and Detail are fixed for video and not shown;
+    Passes has its own control here (Export card), capped far lower than the
+    Single image tab's since a video re-pays the cost every frame. A small
+    player lets the clip be scrubbed and watched before committing to a
+    conversion. The player uses QMediaPlayer (Windows Media Foundation / the
     bundled FFmpeg backend), which handles decode, audio and sync; the app's own
     PyAV path is for the conversion, not for playback.
     """
@@ -2196,6 +2199,24 @@ class VideoPage(QWidget):
             widget.setMinimumWidth(150)
             row.addWidget(widget)
             export_card.add_layout(row)
+        passes_row = QHBoxLayout()
+        passes_row.addWidget(QLabel("Passes"))
+        self.passes_box = QSpinBox()
+        self.passes_box.setRange(1, VIDEO_PASSES_MAX)
+        # Room for the value plus the 18 px arrow buttons so nothing clips,
+        # matching the Single image sidebar's Passes control.
+        self.passes_box.setMinimumWidth(84)
+        self.passes_box.setValue(VIDEO_PASSES)
+        self.passes_box.setToolTip(
+            "How many times DLSS evaluates each frame. More passes let the "
+            "temporal accumulator settle further, at roughly that much more "
+            "conversion time — a video pays the cost on every frame, so this "
+            "is capped lower than the Single image tab's own Passes control."
+        )
+        self.passes_box.valueChanged.connect(self._passes_changed)
+        passes_row.addStretch(1)
+        passes_row.addWidget(self.passes_box)
+        export_card.add_layout(passes_row)
 
         # -- 3D card: optional 3D export (see stereo.py) --
         from .stereo import FORMATS
@@ -2246,6 +2267,7 @@ class VideoPage(QWidget):
         stereo_card.add(self.stereo_dlss)
         self.stereo_card = stereo_card
         self.on_stereo_changed = None           # set by the window: persists the settings
+        self.on_passes_changed = None           # set by the window: persists the settings
 
         self.info_label = QLabel("")
         self.info_label.setObjectName("hint")
@@ -2342,7 +2364,7 @@ class VideoPage(QWidget):
         ], mode=density)
         card.add(self.neural_params)
         note = QLabel("For video only: the Single image tab keeps its own settings. "
-                      "Video always runs one pass at up to 4K.")
+                      "Passes are set in the Export card; size is fixed at up to 4K.")
         note.setObjectName("hint")
         note.setWordWrap(True)
         card.add(note)
@@ -2446,6 +2468,17 @@ class VideoPage(QWidget):
         self._stereo_refresh()
         if self.on_stereo_changed is not None:
             self.on_stereo_changed(self.stereo_settings())
+
+    # -- Export card: passes ---------------------------------------------
+
+    def set_passes(self, value: int) -> None:
+        self.passes_box.blockSignals(True)
+        self.passes_box.setValue(int(value))
+        self.passes_box.blockSignals(False)
+
+    def _passes_changed(self, value: int) -> None:
+        if self.on_passes_changed is not None:
+            self.on_passes_changed(int(value))
 
 
 
@@ -3207,6 +3240,8 @@ class MainWindow(QMainWindow):
         self.video_page = VideoPage()
         self.video_page.set_stereo(self.settings.stereo)
         self.video_page.on_stereo_changed = self._stereo_changed
+        self.video_page.set_passes(self.settings.video.passes)
+        self.video_page.on_passes_changed = self._video_passes_changed
         self._chip_groups.append(self.video_page.build_dlss_cards(
             self.settings.video.neural, self.settings.density, self._video_neural_changed))
         self.video_page.set_effects_note(not self.settings.effects.is_neutral)
@@ -5230,6 +5265,11 @@ class MainWindow(QMainWindow):
         self.settings.save(paths.settings_path())
         self._video_live_nudge()
 
+    def _video_passes_changed(self, value: int) -> None:
+        self.settings.video.passes = max(1, min(VIDEO_PASSES_MAX, int(value)))
+        self.settings.save(paths.settings_path())
+        self._video_live_nudge()
+
     # -- Video tab DLSS preview ------------------------------------------------
 
     def _video_live_nudge(self) -> None:
@@ -5307,12 +5347,15 @@ class MainWindow(QMainWindow):
 
     def video_run_settings(self) -> AppSettings:
         """The settings a video conversion runs with: the Video tab's own
-        neural and HDR controls, the fixed video choices (settings.VIDEO_*),
-        and nothing from the Single image sidebar. A copy, so neither tab's
-        settings are touched."""
+        neural and HDR controls, its own Passes, the fixed video choices
+        (settings.VIDEO_*), and nothing from the Single image sidebar. A copy,
+        so neither tab's settings are touched."""
         run = copy.deepcopy(self.settings)
         run.neural = copy.deepcopy(self.settings.video.neural)
-        run.evaluation.frames = VIDEO_PASSES
+        # Clamped rather than trusted, matching AppSettings.load: the Passes
+        # spinbox already enforces 1..VIDEO_PASSES_MAX, but this is the one
+        # place that value reaches the harness.
+        run.evaluation.frames = max(1, min(VIDEO_PASSES_MAX, self.settings.video.passes))
         run.evaluation.max_edge = VIDEO_MAX_EDGE
         run.evaluation.jitter = False
         run.depth = DepthSettings()
